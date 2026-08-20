@@ -8,12 +8,12 @@ the statistical models used for scoring peptide-spectrum matches.
 import logging
 import numpy as np
 import time
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 
-from .constants import ALGORITHM_CID, ALGORITHM_HCD, TINY_NUM
+from .constants import TINY_NUM
 from .peak import Peak
 
 logger = logging.getLogger(__name__)

@@ -6,8 +6,7 @@ This module contains the FLRCalculator class for calculating false localization 
 
 import logging
 import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Tuple
 from .constants import REAL, DECOY, TINY_NUM
 
 logger = logging.getLogger(__name__)
@@ -150,21 +149,6 @@ class FLRCalculator:
 
         # Decoy sequence - use NumPy's optimized variance (ddof=1 for sample variance)
         self.delta_score_var_neg = np.var(self.neg, ddof=1) if self.n_decoy > 1 else 0.0
-
-    def normal_density(self, cur_tick_mark: float, cur_score: float, h: float) -> float:
-        """
-        Calculate normal density
-
-        Args:
-            cur_tick_mark: Current tick mark
-            cur_score: Current score
-            h: Bandwidth
-
-        Returns:
-            Density value
-        """
-        x = (cur_tick_mark - cur_score) / h
-        return np.exp(-0.5 * x * x) / (h * np.sqrt(2.0 * np.pi))
 
     def eval_tick_marks(self, data_type: int) -> None:
         """
@@ -342,50 +326,6 @@ class FLRCalculator:
         result = np.where(x_values >= self.tick_marks[-1], 0.0, result)
 
         return result
-
-    def get_local_auc(self, x: float, which_f: int) -> float:
-        """
-        Calculate local density value (density at point x).
-
-        Note: This is kept for backwards compatibility. For batch processing,
-        use _interpolate_density_vectorized() directly.
-
-        Args:
-            x: Score
-            which_f: Which distribution to use (f0 or f1)
-
-        Returns:
-            Density value
-        """
-        f = self.f0 if which_f == DECOY else self.f1
-        return float(self._interpolate_density_vectorized(np.array([x]), f)[0])
-
-    def get_global_auc(self, x: float, which_f: int) -> float:
-        """
-        Calculate global AUC (area from x to end of distribution).
-
-        Note: This is kept for backwards compatibility. For batch processing,
-        use calc_both_fdrs() which uses vectorized computation.
-
-        Args:
-            x: Score
-            which_f: Which distribution to use (f0 or f1)
-
-        Returns:
-            AUC value
-        """
-        if which_f == DECOY:
-            f = self.f0
-            if not hasattr(self, '_cumulative_auc_f0'):
-                self._cumulative_auc_f0 = self._compute_cumulative_auc_from_end(self.f0)
-            cumulative_auc = self._cumulative_auc_f0
-        else:
-            f = self.f1
-            if not hasattr(self, '_cumulative_auc_f1'):
-                self._cumulative_auc_f1 = self._compute_cumulative_auc_from_end(self.f1)
-            cumulative_auc = self._cumulative_auc_f1
-
-        return float(self._global_auc_vectorized(np.array([x]), f, cumulative_auc)[0])
 
     def calc_both_fdrs(self) -> None:
         """
@@ -950,45 +890,3 @@ class FLRCalculator:
         except Exception as e:
             logger.error(f"Error finding closest FLR value: {str(e)}")
             return (1.0, 1.0)
-
-    def assign_flr_from_mapping(self, psms: List) -> None:
-        """
-        Assign FLR values to PSMs using saved mapping (for second round calculation)
-
-        Args:
-            psms: List of PSM objects
-        """
-        try:
-            if not self.delta_score_to_flr_map:
-                logger.warning(
-                    "Delta score to FLR mapping is empty, cannot assign FLR values"
-                )
-                return
-
-            assigned_count = 0
-            for psm in psms:
-                if (
-                    not psm.is_decoy
-                    and hasattr(psm, "delta_score")
-                    and not np.isnan(psm.delta_score)
-                ):
-                    if psm.delta_score > self.min_delta_score:
-                        global_flr, local_flr = self.find_closest_flr(psm.delta_score)
-                        psm.global_flr = global_flr
-                        psm.local_flr = local_flr
-                        assigned_count += 1
-                    else:
-                        # For PSMs with delta_score <= min_delta_score, set default values
-                        psm.global_flr = 1.0
-                        psm.local_flr = 1.0
-                else:
-                    # Set decoy PSMs to NaN
-                    psm.global_flr = float("nan")
-                    psm.local_flr = float("nan")
-
-            logger.info(
-                f"Assigned FLR values to {assigned_count} real PSMs using mapping"
-            )
-
-        except Exception as e:
-            logger.error(f"Error assigning FLR values using mapping: {str(e)}")

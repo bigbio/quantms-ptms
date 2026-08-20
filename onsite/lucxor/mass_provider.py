@@ -101,48 +101,6 @@ def _initialize():
     _INITIALIZED = True
 
 
-def get_residue_mass(aa: str) -> float:
-    """
-    Get monoisotopic mass of a single amino acid residue.
-
-    Args:
-        aa: Single-letter amino acid code (uppercase)
-
-    Returns:
-        Monoisotopic mass (internal residue, no termini)
-    """
-    if not _INITIALIZED:
-        _initialize()
-    return _AA_MASSES.get(aa, 0.0)
-
-
-def get_residue_mass_fast(aa_ord: int) -> float:
-    """
-    Get residue mass by ASCII ordinal for fast lookup.
-
-    Args:
-        aa_ord: ord() value of amino acid character
-
-    Returns:
-        Monoisotopic mass
-    """
-    if not _INITIALIZED:
-        _initialize()
-    return _MASS_ARRAY[aa_ord]
-
-
-def get_mass_array() -> np.ndarray:
-    """
-    Get the full mass lookup array for vectorized operations.
-
-    Returns:
-        NumPy array where index = ord(char), value = mass
-    """
-    if not _INITIALIZED:
-        _initialize()
-    return _MASS_ARRAY
-
-
 def get_all_aa_masses() -> dict:
     """
     Get dictionary of all standard amino acid masses.

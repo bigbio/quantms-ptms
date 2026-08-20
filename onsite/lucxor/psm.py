@@ -6,31 +6,23 @@ This module contains the PSM class for handling peptide-spectrum matches.
 
 import logging
 import math
-from typing import Dict, List, Optional, Tuple, Set, Any, Union
+from typing import Dict, List, Optional, Tuple, Any, Union
 import os
-from itertools import combinations, islice
+from itertools import combinations
 import random
-import re
 
 import numpy as np
-import pyopenms
-from pyopenms import AASequence, ResidueModification
 
 from .constants import (
     NTERM_MOD,
     CTERM_MOD,
     AA_MASSES,
     DECOY_AA_MAP,
-    AA_DECOY_MAP,
-    NEUTRAL_LOSSES,
-    MIN_DELTA_SCORE,
     PROTON_MASS,
     WATER_MASS,
-    DECOY_AMINO_ACIDS,
     PHOSPHO_MOD_MASS,
     OXIDATION_MASS,
 )
-from .peak import Peak
 from .peptide import (
     Peptide,
     extract_target_amino_acids,
@@ -38,7 +30,6 @@ from .peptide import (
     strip_modifications,
 )
 from .spectrum import Spectrum
-from .flr import FLRCalculator
 from .globals import get_decoy_symbol
 
 logger = logging.getLogger(__name__)
@@ -276,79 +267,6 @@ class PSM:
             logger.error(f"Error initializing modification information: {str(e)}")
             raise
 
-    def _extract_scan_number(self, spectrum_data: Dict) -> int:
-        """
-        Extract scan number from spectrum data.
-
-        Args:
-            spectrum_data: Spectrum data dictionary
-
-        Returns:
-            Scan number
-        """
-        try:
-            # Try to extract scan number from spectrum ID
-            spectrum_id = spectrum_data.get("native_id", "")
-            if "scan=" in spectrum_id:
-                scan_str = spectrum_id.split("scan=")[1].split()[0]
-                return int(scan_str)
-            elif "index=" in spectrum_id:
-                scan_str = spectrum_id.split("index=")[1].split()[0]
-                return int(scan_str)
-            else:
-                logger.warning(
-                    f"Could not extract scan number from spectrum ID: {spectrum_id}"
-                )
-                return 0
-        except Exception as e:
-            logger.error(f"Error extracting scan number: {str(e)}")
-            return 0
-
-    def _get_modified_peptide(self) -> str:
-        """
-        Get modified peptide string.
-
-        Returns:
-            Modified peptide string
-        """
-        try:
-            # Create AASequence
-            seq = AASequence()
-
-            # Get peptide sequence
-            peptide_seq = self.peptide.peptide
-
-            # Add amino acids and modifications
-            i = 0
-            while i < len(peptide_seq):
-                if peptide_seq[i : i + 9] == "(Phospho)":
-                    # Add phosphorylation modification
-                    mod = ResidueModification()
-                    mod.setMonoMass(79.966331)
-                    seq.setModification(i - 1, mod)
-                    i += 9
-                elif peptide_seq[i : i + 14] == "(PhosphoDecoy)":
-                    # Add decoy phosphorylation modification (treat as phosphorylation)
-                    mod = ResidueModification()
-                    mod.setMonoMass(79.966331)
-                    seq.setModification(i - 1, mod)
-                    i += 14
-                elif peptide_seq[i : i + 9] == "(Oxidation)":
-                    # Add oxidation modification
-                    mod = ResidueModification()
-                    mod.setMonoMass(15.994915)
-                    seq.setModification(i - 1, mod)
-                    i += 9
-                else:
-                    # Add amino acid
-                    seq += peptide_seq[i]
-                    i += 1
-
-            return seq.toString()
-        except Exception as e:
-            logger.error(f"Error creating modified peptide: {str(e)}")
-            return self.peptide.peptide
-
     def process(self, config: Optional[Dict] = None, round_number: int = 0) -> None:
         """
         Process PSM and calculate scores.
@@ -568,62 +486,6 @@ class PSM:
             self.pos_permutation_score_map[perm] = (
                 0.0  # Score will be calculated in scoring stage
             )
-
-    def _validate_permutation(self, perm: str) -> bool:
-        """
-        Validate permutation validity
-
-        Args:
-            perm: Permutation string
-
-        Returns:
-            bool: Whether the permutation is valid
-        """
-        try:
-            # Get unmodified sequence length
-            def get_unmodified_length(seq: str) -> int:
-                length = 0
-                i = 0
-                while i < len(seq):
-                    if seq[i : i + 9] == "(Phospho)":
-                        i += 9
-                    elif seq[i : i + 14] == "(PhosphoDecoy)":
-                        i += 14
-                    elif seq[i : i + 11] == "(Oxidation)":
-                        i += 11
-                    else:
-                        length += 1
-                        i += 1
-                return length
-
-            # Check if unmodified sequence length is correct
-            perm_unmod_len = get_unmodified_length(perm)
-            orig_unmod_len = get_unmodified_length(self.peptide.peptide)
-
-            if perm_unmod_len != orig_unmod_len:
-                logger.debug(
-                    f"Unmodified sequence length mismatch: {perm_unmod_len} != {orig_unmod_len}"
-                )
-                return False
-
-            # Check if modification site count is correct
-            phospho_count = perm.count("(Phospho)")
-            decoy_count = sum(1 for c in perm if c in DECOY_AA_MAP)
-            # Expected total phospho-like sites include both target and decoy phospho markers
-            expected_count = self.peptide.peptide.count(
-                "(Phospho)"
-            ) + self.peptide.peptide.count("(PhosphoDecoy)")
-
-            if phospho_count + decoy_count != expected_count:
-                logger.debug(
-                    f"Phosphorylation count mismatch: {phospho_count + decoy_count} != {expected_count}"
-                )
-                return False
-
-            return True
-        except Exception as e:
-            logger.error(f"Error validating permutation {perm}: {str(e)}")
-            return False
 
     def score_permutations(self, model: Optional[object]) -> None:
         """
@@ -1023,14 +885,6 @@ class PSM:
             self.delta_score = 0.0
             self.psm_score = 0.0
 
-    def _kill_thread_results(self):
-        """Handle scoring failure cases"""
-        self.delta_score = 0.0
-        self.score = -1.0
-        self.psm_score = -1.0
-        self.score1_pep = self.peptide
-        self.score2_pep = self.peptide
-
     def _round_dbl(self, value: float, num_places: int) -> float:
         """
         Round to specified decimal places
@@ -1253,72 +1107,6 @@ class PSM:
             y_can_nl[i] = (total_targets - target_count[i]) > 0
 
         return b_can_nl, y_can_nl
-
-    def _calc_theoretical_masses(self, perm: str) -> List[float]:
-        """
-        Calculate theoretical masses
-
-        Args:
-            perm: Peptide permutation
-
-        Returns:
-            List of theoretical masses
-        """
-        if not perm:
-            return []
-
-        # Get modification site mapping
-        mod_map = self._get_mod_map(perm)
-
-        masses = []
-
-        # Calculate b ions
-        current_mass = 0.0
-        for i in range(len(perm)):
-            if perm[i] not in ["(", ")"]:  # Skip modification markers
-                # Handle amino acids, including lowercase letters (modification sites)
-                if perm[i].upper() in AA_MASSES:
-                    current_mass += self._get_aa_mass(perm[i].upper())
-                elif perm[i] in DECOY_AA_MAP:
-                    # Handle decoy amino acids - directly use decoy amino acid mass
-                    # Decoy amino acid mass already includes DECOY_MASS in AA_MASSES
-                    current_mass += self._get_aa_mass(perm[i])
-            if i in mod_map:
-                current_mass += mod_map[i]
-            # Only add ions longer than minimum length
-            if i >= 1:  # Minimum length is 2
-                # Only generate ions with charge less than peptide charge
-                for z in range(
-                    1, self.charge
-                ):  # Only generate charge states 1 to charge-1
-                    ion_mass = (current_mass + PROTON_MASS) / z
-                    if ion_mass < self.peptide.get_precursor_mass():
-                        masses.append(ion_mass)
-
-        # Calculate y ions
-        current_mass = 0.0
-        for i in range(len(perm) - 1, -1, -1):
-            if perm[i] not in ["(", ")"]:  # Skip modification markers
-                # Handle amino acids, including lowercase letters (modification sites)
-                if perm[i].upper() in AA_MASSES:
-                    current_mass += self._get_aa_mass(perm[i].upper())
-                elif perm[i] in DECOY_AA_MAP:
-                    # Handle decoy amino acids - directly use decoy amino acid mass
-                    # Decoy amino acid mass already includes DECOY_MASS in AA_MASSES
-                    current_mass += self._get_aa_mass(perm[i])
-            if i in mod_map:
-                current_mass += mod_map[i]
-            # Only add ions longer than minimum length
-            if i <= len(perm) - 2:  # Minimum length is 2
-                # Only generate ions with charge less than peptide charge
-                for z in range(
-                    1, self.charge
-                ):  # Only generate charge states 1 to charge-1
-                    ion_mass = (current_mass + WATER_MASS + PROTON_MASS) / z
-                    if ion_mass < self.peptide.get_precursor_mass():
-                        masses.append(ion_mass)
-
-        return masses
 
     def get_results(self) -> str:
         """Get result string"""

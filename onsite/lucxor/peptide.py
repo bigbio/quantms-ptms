@@ -7,7 +7,7 @@ This module contains the Peptide class, which represents a peptide sequence.
 import logging
 import itertools
 import re
-from typing import Dict, List, Set, Tuple, Optional, Any, Union
+from typing import Dict, List, Set, Optional, Any
 
 import numpy as np
 import pyopenms
@@ -17,12 +17,10 @@ from .constants import (
     CTERM_MOD,
     AA_MASSES,
     DECOY_AA_MAP,
-    AA_DECOY_MAP,
     WATER_MASS,
     PROTON_MASS,
 )
 from .globals import get_decoy_symbol
-from .peak import Peak
 
 logger = logging.getLogger(__name__)
 
@@ -327,15 +325,6 @@ class Peptide:
             float: Precursor m/z value
         """
         return self.get_precursor_mass() / self.charge
-
-    def _has_decoy_symbols(self) -> bool:
-        """
-        Check if the peptide contains decoy symbols (special characters).
-
-        These are symbols from DECOY_AA_MAP representing decoy modifications.
-        Now handled by PyOpenMS using registered PhosphoDecoy modifications.
-        """
-        return any(aa in DECOY_AA_MAP for aa in self.mod_peptide)
 
     def _to_pyopenms_format(self) -> str:
         """
@@ -784,51 +773,6 @@ class Peptide:
 
         return matched_peaks
 
-    def _find_closest_peak(self, theo_mz: float, spectrum) -> Optional[Peak]:
-        """
-        Find the closest peak in the spectrum to the theoretical m/z.
-
-        Args:
-            theo_mz: Theoretical m/z value
-            spectrum: PyOpenMS MSSpectrum object
-
-        Returns:
-            Closest peak or None if no peak is within the tolerance
-        """
-        # Get the spectrum peaks
-        mzs, intensities = spectrum.get_peaks()
-
-        # Calculate the fragment error tolerance
-        match_err = self.config.get("ms2_tolerance", 0.5)  # Default in Daltons
-
-        if self.config.get("ms2_tolerance_units", "Da") == "ppm":
-            ppm_err = match_err / 1000000.0
-            match_err = theo_mz * ppm_err
-
-        match_err *= 0.5  # Split in half
-
-        a = theo_mz - match_err
-        b = theo_mz + match_err
-
-        # Find all peaks within the tolerance window
-        cand_matches = []
-        for i in range(len(mzs)):
-            if a <= mzs[i] <= b:
-                peak = Peak(mzs[i], intensities[i])
-                peak.matched = True
-                peak.dist = peak.mz - theo_mz  # obs - expected
-                cand_matches.append(peak)
-
-        # If at least one match was found
-        if cand_matches:
-            # Sort by intensity (highest first)
-            cand_matches.sort(key=lambda pk: pk.raw_intensity, reverse=True)
-
-            # Return the most intense peak
-            return cand_matches[0]
-
-        return None
-
     def calc_score_cid(self, model) -> float:
         """
         Calculate peptide score using CID model
@@ -922,25 +866,6 @@ class Peptide:
             total_score += peak_score
 
         return total_score
-
-    def _log_gaussian_prob(self, mu: float, var: float, x: float) -> float:
-        """
-        Calculate the log probability of x under a Gaussian distribution.
-
-        Args:
-            mu: Mean
-            var: Variance
-            x: Value
-
-        Returns:
-            Log probability
-        """
-        if var <= 0:
-            return float("-inf")
-
-        log_prob = -0.5 * np.log(2 * np.pi * var) - 0.5 * ((x - mu) ** 2) / var
-
-        return log_prob
 
     def is_decoy_pep(self) -> bool:
         """

@@ -5,8 +5,8 @@ This module contains the main processing logic for scoring PSMs and calculating 
 """
 
 import logging
-import numpy as np
-from typing import List, Dict, Any, Optional
+
+from typing import List
 from .psm import PSM
 from .flr import FLRCalculator
 from .config import LucXorConfig

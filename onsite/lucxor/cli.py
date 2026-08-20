@@ -497,19 +497,6 @@ class PyLuciPHOr2:
 
         return all_psms, proteins_df, exp
         
-    def initialize_model(self, config: Dict) -> None:
-        """Initialize scoring model"""
-        fragment_method = config.get("fragment_method", "HCD")
-        
-        if fragment_method == "HCD":
-            self.model = HCDModel(config)
-            self.logger.info("HCD Model initialized")
-        elif fragment_method == "CID":
-            self.model = CIDModel(config)
-            self.logger.info("CID Model initialized")
-        else:
-            raise ValueError(f"Unsupported fragment method: {fragment_method}")
-        
     def run(
         self,
         input_spectrum: str,

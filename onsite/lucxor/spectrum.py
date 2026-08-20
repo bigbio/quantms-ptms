@@ -6,8 +6,7 @@ This module contains the Spectrum class for handling mass spectrometry data.
 
 import logging
 import numpy as np
-from typing import Dict, List, Tuple, Optional
-import pyopenms
+from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -121,68 +120,3 @@ class Spectrum:
         if self.N > 0:
             self._mz_sorted_indices = np.argsort(self.mz)
             self._mz_sorted = self.mz[self._mz_sorted_indices]
-
-    def find_index_by_mz(self, mz: float, tolerance: float = 1e-6) -> int:
-        """
-        Find peak index by m/z value using binary search for better performance.
-
-        Args:
-            mz: m/z value to find
-            tolerance: m/z tolerance for matching
-
-        Returns:
-            Index of peak with matching m/z, or -1 if not found
-        """
-        if self.N == 0:
-            return -1
-
-        # Use binary search on sorted m/z values
-        if self._mz_sorted is None:
-            self._update_sorted_indices()
-
-        # Find closest m/z using searchsorted
-        idx = np.searchsorted(self._mz_sorted, mz)
-
-        # Check both adjacent positions
-        candidates = []
-        if idx > 0:
-            candidates.append(idx - 1)
-        if idx < len(self._mz_sorted):
-            candidates.append(idx)
-
-        # Find the closest match within tolerance
-        best_idx = -1
-        best_diff = float("inf")
-
-        for candidate_idx in candidates:
-            if candidate_idx < len(self._mz_sorted):
-                diff = abs(self._mz_sorted[candidate_idx] - mz)
-                if diff < tolerance and diff < best_diff:
-                    best_diff = diff
-                    best_idx = self._mz_sorted_indices[candidate_idx]
-
-        return best_idx
-
-    def find_peaks_in_range(self, mz_min: float, mz_max: float) -> np.ndarray:
-        """
-        Find all peak indices within a m/z range using binary search.
-
-        Args:
-            mz_min: Minimum m/z value
-            mz_max: Maximum m/z value
-
-        Returns:
-            Array of indices of peaks within the range
-        """
-        if self.N == 0:
-            return np.array([])
-
-        if self._mz_sorted is None:
-            self._update_sorted_indices()
-
-        # Use searchsorted to find range boundaries
-        start_idx = np.searchsorted(self._mz_sorted, mz_min, side="left")
-        end_idx = np.searchsorted(self._mz_sorted, mz_max, side="right")
-
-        # Return original indices
-        return self._mz_sorted_indices[start_idx:end_idx]
